@@ -1,10 +1,11 @@
 import datetime
 from typing import Optional
 
+from fastapi import FastAPI, HTTPException, Query
+from sqlalchemy import String, bindparam, or_, select
+
 import crud
 from dependency import SessionDependency
-from fastapi import FastAPI, HTTPException, Query
-from fastapi.params import Depends
 from lifespan import lifespan
 from models import Advertisement
 from schema import (
@@ -12,11 +13,8 @@ from schema import (
     GetAdvResponse,
     IdResponse,
     SearchAdvResponse,
-    SearchParams,
     UpdateAdvRequest,
 )
-from sqlalchemy import String, bindparam, or_, select
-
 
 app = FastAPI(
     title="Advertisment API",
@@ -31,7 +29,10 @@ async def create_advertisement(
     session: SessionDependency, item: CreateAdvRequest
 ) -> Advertisement:
     adv = Advertisement(
-        title=item.title, description=item.description, owner=item.owner
+        title=item.title,
+        description=item.description,
+        price=item.price,
+        owner=item.owner,
     )
     await crud.add_adv(session, adv)
     return adv.id_dict
@@ -50,11 +51,11 @@ async def search_advertisement(
     session: SessionDependency,
     title: Optional[str] = Query(None),
     description: Optional[str] = Query(None),
+    price: Optional[int] = Query(None),
     owner: Optional[str] = Query(None),
     date_posted: Optional[str] = Query(None),
 ) -> SearchAdvResponse:
-
-    if not any([title, description, owner, date_posted]):
+    if not any([title, description, price, owner, date_posted]):
         raise HTTPException(
             status_code=400, detail="At least one search parameter is required"
         )
@@ -62,24 +63,20 @@ async def search_advertisement(
     conditions = []
 
     if title:
-        conditions.append(Advertisement.title.ilike(bindparam("title", f"%{title}%")))
+        conditions.append(Advertisement.title.ilike(f"%{title}%"))
     if description:
-        conditions.append(
-            Advertisement.description.ilike(
-                bindparam("description", f"%{description}%")
-            )
-        )
+        conditions.append(Advertisement.description.ilike(f"%{description}%"))
+    if price:
+        conditions.append(Advertisement.price == price)
     if owner:
-        conditions.append(Advertisement.owner.ilike(bindparam("owner", f"%{owner}%")))
+        conditions.append(Advertisement.owner.ilike(f"%{owner}%"))
     if date_posted:
         try:
             date_obj = datetime.strptime(date_posted, "%Y-%m-%d").date()
             conditions.append(Advertisement.date_posted == date_obj)
         except ValueError:
             conditions.append(
-                Advertisement.date_posted.cast(String).ilike(
-                    bindparam("date_posted", f"%{date_posted}%")
-                )
+                Advertisement.date_posted.cast(String).ilike(f"%{date_posted}%")
             )
 
     query = select(Advertisement).where(or_(*conditions)).limit(10000)

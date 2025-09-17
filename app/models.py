@@ -23,6 +23,7 @@ class Advertisement(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     title: Mapped[str] = mapped_column(String, index=True)
     description: Mapped[str] = mapped_column(String, default=None)
+    price: Mapped[int] = mapped_column(Integer, index=True)
     owner: Mapped[str] = mapped_column(String, index=True)
     date_posted: Mapped[datetime.datetime] = mapped_column(
         DateTime, server_default=func.now()
@@ -34,6 +35,7 @@ class Advertisement(Base):
             "id": self.id,
             "title": self.title,
             "description": self.description,
+            "price": self.price,
             "owner": self.owner,
             "date_posted": self.date_posted.isoformat(),
         }
