@@ -75,6 +75,7 @@ class CreateUserRequest(BaseUserRequest):
 class CreateUserResponse(IdResponse):
     pass
 
+
 class UpdateUserRequest(BaseUserRequest):
     name: Optional[str] = None
     role: Optional[int] = None
