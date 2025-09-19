@@ -3,6 +3,9 @@ import uuid
 from typing import Optional
 
 from pydantic import BaseModel
+from sqlalchemy.sql.coercions import RoleImpl
+
+from custom_type import ROLE
 
 
 class IdResponse(BaseModel):
@@ -80,3 +83,10 @@ class UpdateUserRequest(BaseUserRequest):
     name: Optional[str] = None
     role: Optional[int] = None
     password: Optional[str] = None
+
+
+class GetUserResponse(BaseModel):
+    id: int
+    name: str
+    passsword: str
+    role: ROLE

@@ -10,9 +10,11 @@ from fastapi import FastAPI, HTTPException, Query
 from lifespan import lifespan
 from models import Advertisement, User
 from schema import (
+    BaseUserRequest,
     CreateAdvRequest,
     CreateUserRequest,
     GetAdvResponse,
+    GetUserResponse,
     IdResponse,
     LoginRequest,
     LoginResponse,
@@ -44,10 +46,10 @@ async def create_advertisement(
 async def get_advertisement(
     session: SessionDependency, token: TokenDependency, advertisement_id: int
 ) -> Advertisement:
-    adv_orm_obj = await crud.get_item_by_id(session, advertisement_id, Advertisement)
+    adv_orm_obj = await crud.get_item_by_id(session, Advertisement, advertisement_id)
     if token.user.role == "admin" or adv_orm_obj.user_id == token.user_id:
         return adv_orm_obj.dict
-    raise HTTPException(403, "Influent previleges")
+    raise HTTPException(403, "Insufficient privileges")
 
 
 @app.get("/advertisement", response_model=SearchAdvResponse)
@@ -111,7 +113,7 @@ async def update_advertisement(
 
         await crud.add_item(session, orm_obj)
         return {"id": advertisement_id}
-    raise HTTPException(403, "Influent previleges")
+    raise HTTPException(403, "Insufficient privileges")
 
 
 @app.delete("/advertisement/{advertisement_id}", response_model=IdResponse)
@@ -137,7 +139,7 @@ async def login(login_data: LoginRequest, session: SessionDependency) -> LoginRe
     return token.dict
 
 
-@app.post("/user", tags=["user"])
+@app.post("/user", tags=["user"], response_model=IdResponse)
 async def create_user(user_data: CreateUserRequest, session: SessionDependency) -> User:
     user_dict = user_data.model_dump(exclude_unset=True)
     user_dict["password"] = auth.hash_password(user_dict["password"])
@@ -146,22 +148,22 @@ async def create_user(user_data: CreateUserRequest, session: SessionDependency) 
     return user_orm_obj.in_dict
 
 
-@app.get("/user/{user_id}", tags=["user"])
+@app.get("/user/{user_id}", tags=["user"], response_model=GetUserResponse)
 async def get_user(user_id: int, session: SessionDependency) -> User:
-    user_orm_obj = await crud.get_item_by_id(session, user_id)
+    user_orm_obj = await crud.get_item_by_id(session, User, user_id)
     return user_orm_obj.dict
 
 
-@app.delete("/user/{user_id}", tags=["user"])
+@app.delete("/user/{user_id}", tags=["user"], response_model=IdResponse)
 async def delete_user(user_id: int, session: SessionDependency) -> User:
-    user_orm_obj = await crud.get_item_by_id(session, user_id, User)
+    user_orm_obj = await crud.get_item_by_id(session, User, user_id)
     if token.user.role == "admin" or user_orm_obj.user_id == token.user_id:
         await crud.delete_item(session, user_orm_obj)
         return user_orm_obj.user_id
-    raise HTTPException(403, "Influent previleges")
+    raise HTTPException(403, "Insufficient privileges")
 
 
-@app.patch("/user/{user_id}", tags=["user"])
+@app.patch("/user/{user_id}", tags=["user"], response_model=IdResponse)
 async def update_user(
     user_id: int, session: SessionDependency, user_data: UpdateUserRequest
 ) -> User:
@@ -177,4 +179,4 @@ async def update_user(
 
         await crud.add_item(session, user_orm_obj)
         return {"id": user_orm_obj}
-    raise HTTPException(403, "Influent previleges")
+    raise HTTPException(403, "Insufficient privileges")
