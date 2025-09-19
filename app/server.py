@@ -111,7 +111,7 @@ async def update_advertisement(
         if item.description is not None:
             orm_obj.description = item.description
 
-        await crud.add_item(session, orm_obj)
+        await crud.update_item(session, orm_obj)
         return {"id": advertisement_id}
     raise HTTPException(403, "Insufficient privileges")
 
@@ -122,7 +122,7 @@ async def delete_advertisement(
 ) -> Advertisement:
     orm_obj = await crud.get_item_by_id(session, Advertisement, advertisement_id)
     if token.user.role == "admin" or orm_obj.user_id == token.user_id:
-        await crud.delete_item(orm_obj)
+        await crud.delete_item(session, orm_obj)
         return {"id": advertisement_id}
 
 
@@ -155,7 +155,7 @@ async def get_user(user_id: int, session: SessionDependency) -> User:
 
 
 @app.delete("/user/{user_id}", tags=["user"], response_model=IdResponse)
-async def delete_user(user_id: int, session: SessionDependency) -> User:
+async def delete_user(user_id: int, session: SessionDependency, token: TokenDependency) -> User:
     user_orm_obj = await crud.get_item_by_id(session, User, user_id)
     if token.user.role == "admin" or user_orm_obj.user_id == token.user_id:
         await crud.delete_item(session, user_orm_obj)
@@ -171,12 +171,12 @@ async def update_user(
 
     if token.user.role == "admin" or user_orm_obj.user_id == token.user_id:
         if user_data.name is not None:
-            user_orm_obj.name = user_data.username
+            user_orm_obj.name = user_data.name
         if user_data.password is not None:
             user_orm_obj.password = auth.hash_password(user_data.password)
         if user_data.role is not None:
             user_orm_obj.role = user_data.role
 
-        await crud.add_item(session, user_orm_obj)
+        await crud.update_item(session, user_orm_obj)
         return {"id": user_orm_obj}
     raise HTTPException(403, "Insufficient privileges")
