@@ -1,4 +1,5 @@
 import datetime
+import uuid
 from typing import Optional
 
 from pydantic import BaseModel
@@ -6,6 +7,11 @@ from pydantic import BaseModel
 
 class IdResponse(BaseModel):
     id: int
+
+
+class BaseUserRequest(BaseModel):
+    name: str
+    password: str
 
 
 class CreateAdvRequest(BaseModel):
@@ -51,3 +57,25 @@ class SearchParams(BaseModel):
         return any(
             [self.title, self.description, self.price, self.owner, self.date_posted]
         )
+
+
+class LoginRequest(BaseUserRequest):
+    name: str
+    password: str
+
+
+class LoginResponse(BaseModel):
+    token: uuid.UUID
+
+
+class CreateUserRequest(BaseUserRequest):
+    name: str
+
+
+class CreateUserResponse(IdResponse):
+    pass
+
+class UpdateUserRequest(BaseUserRequest):
+    name: Optional[str] = None
+    role: Optional[int] = None
+    password: Optional[str] = None

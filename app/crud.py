@@ -4,7 +4,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 
-async def get_avd_by_id(
+async def get_item_by_id(
     session: AsyncSession, orm_cls: ORM_CLS, item_id: int
 ) -> ORM_OBJ:
     orm_obj = await session.get(orm_cls, item_id)
@@ -13,7 +13,7 @@ async def get_avd_by_id(
     return orm_obj
 
 
-async def add_adv(session: AsyncSession, item: ORM_OBJ):
+async def add_item(session: AsyncSession, item: ORM_OBJ):
     session.add(item)
     try:
         await session.commit()

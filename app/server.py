@@ -1,63 +1,64 @@
 import datetime
+import token
 from typing import Optional
 
 from fastapi import FastAPI, HTTPException, Query
-from sqlalchemy import String, bindparam, or_, select
+from sqlalchemy import String, or_, select
 
+import auth
 import crud
-from dependency import SessionDependency
+import models
+from dependency import SessionDependency, TokenDependency
 from lifespan import lifespan
-from models import Advertisement
+from models import Advertisement, User
 from schema import (
     CreateAdvRequest,
-    GetAdvResponse,
+    CreateUserRequest, GetAdvResponse,
     IdResponse,
-    SearchAdvResponse,
-    UpdateAdvRequest,
+    LoginRequest, LoginResponse, SearchAdvResponse,
+    UpdateAdvRequest, UpdateUserRequest,
 )
 
 app = FastAPI(
-    title="Advertisment API",
-    terms_of_service="",
-    description="list of advs",
-    lifespan=lifespan,
+    title = "Advertisment API",
+    terms_of_service = "",
+    description = "list of advs",
+    lifespan = lifespan,
 )
 
 
-@app.post("/advertisement", response_model=IdResponse)
+@app.post("/advertisement", response_model = IdResponse)
 async def create_advertisement(
-    session: SessionDependency, item: CreateAdvRequest
+        session: SessionDependency, item: CreateAdvRequest
 ) -> Advertisement:
-    adv = Advertisement(
-        title=item.title,
-        description=item.description,
-        price=item.price,
-        owner=item.owner,
-    )
-    await crud.add_adv(session, adv)
-    return adv.id_dict
+    adv_dict = item.model_dump(exclude_unset = True)
+    adv_orm_obj = Advertisement(**adv_dict, user_id = token.user_id)
+    await crud.add_item(session, adv_orm_obj)
+    return adv_orm_obj.id_dict
 
 
-@app.get("/advertisement/{advertisement_id}", response_model=GetAdvResponse)
+@app.get("/advertisement/{advertisement_id}", response_model = GetAdvResponse)
 async def get_advertisement(
-    session: SessionDependency, advertisement_id: int
+        session: SessionDependency, token: TokenDependency, advertisement_id: int
 ) -> Advertisement:
-    adv = await crud.get_avd_by_id(session, Advertisement, advertisement_id)
-    return adv.dict
+    adv_orm_obj = await crud.get_item_by_id(session, advertisement_id, Advertisement)
+    if token.user.role == "admin" or adv_orm_obj.user_id == token.user_id:
+        return adv_orm_obj.dict
+    raise HTTPException(403, "Influent previleges")
 
 
-@app.get("/advertisement", response_model=SearchAdvResponse)
+@app.get("/advertisement", response_model = SearchAdvResponse)
 async def search_advertisement(
-    session: SessionDependency,
-    title: Optional[str] = Query(None),
-    description: Optional[str] = Query(None),
-    price: Optional[int] = Query(None),
-    owner: Optional[str] = Query(None),
-    date_posted: Optional[str] = Query(None),
+        session: SessionDependency,
+        title: Optional[str] = Query(None),
+        description: Optional[str] = Query(None),
+        price: Optional[int] = Query(None),
+        owner: Optional[str] = Query(None),
+        date_posted: Optional[str] = Query(None),
 ) -> SearchAdvResponse:
     if not any([title, description, price, owner, date_posted]):
         raise HTTPException(
-            status_code=400, detail="At least one search parameter is required"
+            status_code = 400, detail = "At least one search parameter is required"
         )
 
     conditions = []
@@ -84,28 +85,93 @@ async def search_advertisement(
     result = await session.execute(query)
     advs = result.scalars().all()
 
-    return SearchAdvResponse(advs=[GetAdvResponse.model_validate(adv) for adv in advs])
+    return SearchAdvResponse(advs = [GetAdvResponse.model_validate(adv) for adv in advs])
 
 
-@app.patch("/advertisement/{adv_id}", response_model=IdResponse)
+@app.patch("/advertisement/{advertisement_id}", response_model = IdResponse)
 async def update_advertisement(
-    session: SessionDependency, adv_id: int, item: UpdateAdvRequest
+        session: SessionDependency,
+        token: TokenDependency,
+        advertisement_id: int,
+        item: UpdateAdvRequest
 ) -> Advertisement:
-    adv = await crud.get_avd_by_id(session, Advertisement, adv_id)
+    orm_obj = await crud.get_item_by_id(session, Advertisement, advertisement_id, )
+    if token.user.role == "admin" or orm_obj.user_id == token.user_id:
+        if item.title is not None:
+            orm_obj.title = item.title
+        if item.description is not None:
+            orm_obj.description = item.description
 
-    if item.title is not None:
-        adv.title = item.title
-    if item.description is not None:
-        adv.description = item.description
-
-    await crud.add_adv(session, adv)
-    return {"id": adv_id}
+        await crud.add_item(session, orm_obj)
+        return {"id":advertisement_id}
+    raise HTTPException(403, "Influent previleges")
 
 
-@app.delete("/advertisement/{advertisement_id}", response_model=IdResponse)
+@app.delete("/advertisement/{advertisement_id}", response_model = IdResponse)
 async def delete_advertisement(
-    session: SessionDependency, advertisement_id: int
+        session: SessionDependency,
+        token: TokenDependency,
+        advertisement_id: int
 ) -> Advertisement:
-    adv = await crud.get_avd_by_id(session, Advertisement, advertisement_id)
-    await crud.delete_item(adv)
-    return {"id": advertisement_id}
+    orm_obj = await crud.get_item_by_id(session, Advertisement, advertisement_id)
+    if token.user.role == "admin" or orm_obj.user_id == token.user_id:
+        await crud.delete_item(orm_obj)
+        return {"id":advertisement_id}
+
+
+@app.post("/login", tags = ["login"], response_model = LoginResponse)
+async def login(login_data: LoginRequest, session: SessionDependency) -> LoginResponse:
+    query = select(models.User).where(models.User.name == login_data.name)
+    user = await session.scalar(query)
+    if user is None:
+        raise HTTPException(401, "Invalid credentials")
+    if not auth.check_password(login_data.password, user.password):
+        raise HTTPException(401, "Invalid credentials")
+    token = models.Token(user_id = user.id)
+    await crud.add_item(session, token)
+    return token.dict
+
+
+@app.post("/user", tags = ["user"])
+async def create_user(user_data: CreateUserRequest, session: SessionDependency) -> User:
+    user_dict = user_data.model_dump(exclude_unset = True)
+    user_dict["password"] = auth.hash_password(user_dict["password"])
+    user_orm_obj = models.User(**user_dict)
+    await crud.add_item(session, user_orm_obj)
+    return user_orm_obj.in_dict
+
+
+@app.get("/user/{user_id}", tags = ["user"])
+async def get_user(user_id: int, session: SessionDependency) -> User:
+    user_orm_obj = await crud.get_item_by_id(session, user_id)
+    return user_orm_obj.dict
+
+
+@app.delete("/user/{user_id}", tags = ["user"])
+async def delete_user(user_id: int, session: SessionDependency) -> User:
+    user_orm_obj = await crud.get_item_by_id(session, user_id, User)
+    if token.user.role == "admin" or user_orm_obj.user_id == token.user_id:
+        await crud.delete_item(session, user_orm_obj)
+        return user_orm_obj.user_id
+    raise HTTPException(403, "Influent previleges")
+
+
+@app.patch("/user/{user_id}", tags = ["user"])
+async def update_user(
+        user_id: int,
+        session: SessionDependency,
+        user_data: UpdateUserRequest
+) -> User:
+    user_orm_obj = await crud.get_item_by_id(session, User, user_id)
+
+    if token.user.role == "admin" or user_orm_obj.user_id == token.user_id:
+        if user_data.name is not None:
+            user_orm_obj.name = user_data.username
+        if user_data.password is not None:
+            user_orm_obj.password = auth.hash_password(user_data.password)
+        if user_data.role is not None:
+            user_orm_obj.role = user_data.role
+
+        await crud.add_item(session, user_orm_obj)
+        return {"id":user_orm_obj}
+    raise HTTPException(403, "Influent previleges")
